@@ -73,7 +73,7 @@ def setup_layout():
     fig = go.Figure()
     fig.add_trace(go.Scatter3d(x=edge_x, y=edge_y, z=edge_z, mode='lines', line=dict(color='gray', width=1), hoverinfo='none'))
     fig.add_trace(go.Scatter3d(x=node_x, y=node_y, z=node_z, mode='markers+text', marker=dict(size=10, color=node_colors), text=node_labels, textposition='top center', hoverinfo='text', customdata=node_customdata))
-    fig.update_layout(title='Trade Network', scene=dict(xaxis=dict(title='Node Index', showticklabels=False), yaxis=dict(title='', showticklabels=False), zaxis=dict(title='Layer', tickvals=[0, 1, 2], ticktext=['Importer', '2nd Partner', 'Exporter'], showticklabels=True), camera=dict(eye=dict(x=1.5, y=1.5, z=0.8)), width=1280, height=800)
+    fig.update_layout(title='Trade Network', scene=dict(xaxis=dict(title='Node Index', showticklabels=False), yaxis=dict(title='', showticklabels=False), zaxis=dict(title='Layer', tickvals=[0, 1, 2], ticktext=['Importer', '2nd Partner', 'Exporter'], showticklabels=True), camera=dict(eye=dict(x=1.5, y=1.5, z=0.8)), width=1280, height=800))
     
     app.layout = html.Div([
         dcc.Graph(id='trade-network', figure=fig),
