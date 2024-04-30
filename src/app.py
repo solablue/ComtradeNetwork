@@ -7,12 +7,14 @@ from ast import literal_eval
 from dash import Dash, dcc, html
 from dash.dependencies import Input, Output, State
 
-# Read the CSV file
-# df = pd.read_csv('/Users/solakim/Downloads/df_renamed.csv')
-df = pd.read_csv('data/df_network_norway.csv')
+# Initialize the Dash app and expose the server
+app = Dash(__name__)
+server = app.server  # Expose the Flask server for deployment with Gunicorn
 
-# Use a Plotly Express qualitative color palette
-colors = px.colors.qualitative.Plotly
+def load_data():
+    # df = pd.read_csv('/Users/solakim/Downloads/df_renamed.csv')
+    df = pd.read_csv('data/df_network_norway.csv')
+    return df
 
 def get_unique_colors(n):
     colors = [
@@ -21,132 +23,204 @@ def get_unique_colors(n):
     ]
     return colors[:n]
 
-# Dictionary to store transactions by country
-transactions_by_country = {}
+def prepare_transactions(df):
+    transactions_by_country = {}
+    for _, row in df.iterrows():
+        for role in ['Importer', 'Exporter', 'partner2Desc']:
+            country = row[role]
+            transaction = (row['Importer'], row['Exporter'], row['partner2Desc'])
+            if country not in transactions_by_country:
+                transactions_by_country[country] = set()
+            transactions_by_country[country].add(transaction)
+    return transactions_by_country
 
-# Populate transactions for each country
-for _, row in df.iterrows():
-    for role in ['Importer', 'Exporter', 'partner2Desc']:
-        country = row[role]
-        transaction = (row['Importer'], row['Exporter'], row['partner2Desc'])
-        if country not in transactions_by_country:
-            transactions_by_country[country] = set()
-        transactions_by_country[country].add(transaction)
+def prepare_graph_elements(transactions_by_country):
+    edge_x, edge_y, edge_z = [], [], []
+    node_x, node_y, node_z = [], [], []
+    node_labels, node_colors, node_customdata = [], [], []
+    node_positions, node_indices, node_combinations = {}, {}, {}
+    
+    unique_transactions = set()
+    for transactions in transactions_by_country.values():
+        unique_transactions.update(transactions)
+    
+    transaction_colors = get_unique_colors(len(unique_transactions))
+    transaction_to_color = {trans: transaction_colors[i % len(transaction_colors)] for i, trans in enumerate(unique_transactions)}
 
-# Create lists to store the edges and nodes
-edge_x = []
-edge_y = []
-edge_z = []
-node_x = []
-node_y = []
-node_z = []
-node_labels = []
-node_colors = []
-node_customdata = []
+    for transaction in unique_transactions:
+        importer, exporter, partner2 = transaction
+        importer_key = f"{importer}_0"
+        partner2_key = f"{partner2}_1"
+        exporter_key = f"{exporter}_2"
+    
+        if importer_key in node_indices and partner2_key in node_indices:
+            edge_x.extend([node_x[node_indices[importer_key]], node_x[node_indices[partner2_key]], None])
+            edge_y.extend([node_y[node_indices[importer_key]], node_y[node_indices[partner2_key]], None])
+            edge_z.extend([0, 1, None])
+    
+        if partner2_key in node_indices and exporter_key in node_indices:
+            edge_x.extend([node_x[node_indices[partner2_key]], node_x[node_indices[exporter_key]], None])
+            edge_y.extend([node_y[node_indices[partner2_key]], node_y[node_indices[exporter_key]], None])
+            edge_z.extend([1, 2, None])
+    
+    return edge_x, edge_y, edge_z, node_x, node_y, node_z, node_labels, node_colors, node_customdata
 
-# Create dictionaries to store the node positions, indices, and combinations
-node_positions = {}
-node_indices = {}
-node_combinations = {}
+def setup_layout():
+    df = load_data()
+    transactions_by_country = prepare_transactions(df)
+    edge_x, edge_y, edge_z, node_x, node_y, node_z, node_labels, node_colors, node_customdata = prepare_graph_elements(transactions_by_country)
+    
+    fig = go.Figure()
+    fig.add_trace(go.Scatter3d(x=edge_x, y=edge_y, z=edge_z, mode='lines', line=dict(color='gray', width=1), hoverinfo='none'))
+    fig.add_trace(go.Scatter3d(x=node_x, y=node_y, z=node_z, mode='markers+text', marker=dict(size=10, color=node_colors), text=node_labels, textposition='top center', hoverinfo='text', customdata=node_customdata))
+    fig.update_layout(title='Trade Network', scene=dict(xaxis=dict(title='Node Index', showticklabels=False), yaxis=dict(title='', showticklabels=False), zaxis=dict(title='Layer', tickvals=[0, 1, 2], ticktext=['Importer', '2nd Partner', 'Exporter'], showticklabels=True), camera=dict(eye=dict(x=1.5, y=1.5, z=0.8)), width=1280, height=800)
+    
+    app.layout = html.Div([
+        dcc.Graph(id='trade-network', figure=fig),
+        html.Div(id='click-data')
+    ])
 
-# Assuming transactions_by_country is populated from the DataFrame
-unique_transactions = set()
-for transactions in transactions_by_country.values():
-    unique_transactions.update(transactions)
 
-# Debugging: Print unique transactions to ensure all are captured
-print(f"Unique Transactions: {unique_transactions}")
+# # Read the CSV file
+# # df = pd.read_csv('/Users/solakim/Downloads/df_renamed.csv')
+# df = pd.read_csv('data/df_network_norway.csv')
 
-# Get unique colors
-transaction_colors = get_unique_colors(len(unique_transactions))
+# # Use a Plotly Express qualitative color palette
+# colors = px.colors.qualitative.Plotly
 
-# Map transactions to colors, ensuring we have enough colors by cycling through them if necessary
-transaction_to_color = {trans: colors[i % len(colors)] for i, trans in enumerate(unique_transactions)}
+# def get_unique_colors(n):
+#     colors = [
+#         'green', 'yellow', 'blue', 'purple', 'orange', 'pink', 'teal',
+#         'lime', 'brown', 'gold', 'silver', 'cyan', 'magenta', 'olive', 'maroon'
+#     ]
+#     return colors[:n]
 
-# Debugging: Print transaction to color mapping
-print(f"Transaction to Color Mapping: {transaction_to_color}")
+# # Dictionary to store transactions by country
+# transactions_by_country = {}
 
-# Populate nodes and node attributes
+# # Populate transactions for each country
+# for _, row in df.iterrows():
+#     for role in ['Importer', 'Exporter', 'partner2Desc']:
+#         country = row[role]
+#         transaction = (row['Importer'], row['Exporter'], row['partner2Desc'])
+#         if country not in transactions_by_country:
+#             transactions_by_country[country] = set()
+#         transactions_by_country[country].add(transaction)
 
-for _, row in df.iterrows():
-    for country, layer in [(row['Importer'], 0), (row['partner2Desc'], 1), (row['Exporter'], 2)]:
-        node_key = f"{country}_{layer}"
-        if node_key not in node_positions:
-            if country in transactions_by_country:
-                node_custom_data = list(transactions_by_country[country])
-            else:
-                node_custom_data = []
-            node_positions[node_key] = (random.uniform(-1, 1), layer)
-            node_indices[node_key] = len(node_labels)
-            node_combinations[node_key] = node_custom_data
-            node_x.append(node_indices[node_key])
-            node_y.append(node_positions[node_key][0])
-            node_z.append(node_positions[node_key][1])
-            node_labels.append(country)
-            node_colors.append('grey')
-            node_customdata.append(str(node_custom_data))
+# # Create lists to store the edges and nodes
+# edge_x = []
+# edge_y = []
+# edge_z = []
+# node_x = []
+# node_y = []
+# node_z = []
+# node_labels = []
+# node_colors = []
+# node_customdata = []
 
-# Populate edges
-for transaction in unique_transactions:
-    importer, exporter, partner2 = transaction
-    importer_key = f"{importer}_0"
-    partner2_key = f"{partner2}_1"
-    exporter_key = f"{exporter}_2"
+# # Create dictionaries to store the node positions, indices, and combinations
+# node_positions = {}
+# node_indices = {}
+# node_combinations = {}
 
-    if importer_key in node_indices and partner2_key in node_indices:
-        edge_x.extend([node_x[node_indices[importer_key]], node_x[node_indices[partner2_key]], None])
-        edge_y.extend([node_y[node_indices[importer_key]], node_y[node_indices[partner2_key]], None])
-        edge_z.extend([0, 1, None])
+# # Assuming transactions_by_country is populated from the DataFrame
+# unique_transactions = set()
+# for transactions in transactions_by_country.values():
+#     unique_transactions.update(transactions)
 
-    if partner2_key in node_indices and exporter_key in node_indices:
-        edge_x.extend([node_x[node_indices[partner2_key]], node_x[node_indices[exporter_key]], None])
-        edge_y.extend([node_y[node_indices[partner2_key]], node_y[node_indices[exporter_key]], None])
-        edge_z.extend([1, 2, None])
+# # Debugging: Print unique transactions to ensure all are captured
+# print(f"Unique Transactions: {unique_transactions}")
 
-# Create the Dash app
-app = Dash(__name__)
+# # Get unique colors
+# transaction_colors = get_unique_colors(len(unique_transactions))
 
-# Create the 3D network graph
-fig = go.Figure()
+# # Map transactions to colors, ensuring we have enough colors by cycling through them if necessary
+# transaction_to_color = {trans: colors[i % len(colors)] for i, trans in enumerate(unique_transactions)}
 
-# Add edges
-fig.add_trace(go.Scatter3d(
-    x=edge_x, y=edge_y, z=edge_z,
-    mode='lines',
-    line=dict(color='gray', width=1),
-    hoverinfo='none'
-))
+# # Debugging: Print transaction to color mapping
+# print(f"Transaction to Color Mapping: {transaction_to_color}")
 
-# Add nodes
-node_trace = go.Scatter3d(
-    x=node_x, y=node_y, z=node_z,
-    mode='markers+text',
-    marker=dict(size=10, color=node_colors),
-    text=node_labels,
-    textposition='top center',
-    hoverinfo='text',
-    customdata=node_customdata
-)
-fig.add_trace(node_trace)
+# # Populate nodes and node attributes
 
-# Update the layout
-fig.update_layout(
-    title='Trade Network',
-    scene=dict(
-        xaxis=dict(title='Node Index', showticklabels=False),
-        yaxis=dict(title='', showticklabels=False),
-        zaxis=dict(title='Layer', tickvals=[0, 1, 2], ticktext=['Importer', '2nd Partner', 'Exporter'], showticklabels=True),
-        camera=dict(eye=dict(x=1.5, y=1.5, z=0.8))
-    ),
-    width=1280,
-    height=800
-)
+# for _, row in df.iterrows():
+#     for country, layer in [(row['Importer'], 0), (row['partner2Desc'], 1), (row['Exporter'], 2)]:
+#         node_key = f"{country}_{layer}"
+#         if node_key not in node_positions:
+#             if country in transactions_by_country:
+#                 node_custom_data = list(transactions_by_country[country])
+#             else:
+#                 node_custom_data = []
+#             node_positions[node_key] = (random.uniform(-1, 1), layer)
+#             node_indices[node_key] = len(node_labels)
+#             node_combinations[node_key] = node_custom_data
+#             node_x.append(node_indices[node_key])
+#             node_y.append(node_positions[node_key][0])
+#             node_z.append(node_positions[node_key][1])
+#             node_labels.append(country)
+#             node_colors.append('grey')
+#             node_customdata.append(str(node_custom_data))
 
-# Create the app layout
-app.layout = html.Div([
-    dcc.Graph(id='trade-network', figure=fig),
-    html.Div(id='click-data')
-])
+# # Populate edges
+# for transaction in unique_transactions:
+#     importer, exporter, partner2 = transaction
+#     importer_key = f"{importer}_0"
+#     partner2_key = f"{partner2}_1"
+#     exporter_key = f"{exporter}_2"
+
+#     if importer_key in node_indices and partner2_key in node_indices:
+#         edge_x.extend([node_x[node_indices[importer_key]], node_x[node_indices[partner2_key]], None])
+#         edge_y.extend([node_y[node_indices[importer_key]], node_y[node_indices[partner2_key]], None])
+#         edge_z.extend([0, 1, None])
+
+#     if partner2_key in node_indices and exporter_key in node_indices:
+#         edge_x.extend([node_x[node_indices[partner2_key]], node_x[node_indices[exporter_key]], None])
+#         edge_y.extend([node_y[node_indices[partner2_key]], node_y[node_indices[exporter_key]], None])
+#         edge_z.extend([1, 2, None])
+
+# # Create the Dash app
+# app = Dash(__name__)
+
+# # Create the 3D network graph
+# fig = go.Figure()
+
+# # Add edges
+# fig.add_trace(go.Scatter3d(
+#     x=edge_x, y=edge_y, z=edge_z,
+#     mode='lines',
+#     line=dict(color='gray', width=1),
+#     hoverinfo='none'
+# ))
+
+# # Add nodes
+# node_trace = go.Scatter3d(
+#     x=node_x, y=node_y, z=node_z,
+#     mode='markers+text',
+#     marker=dict(size=10, color=node_colors),
+#     text=node_labels,
+#     textposition='top center',
+#     hoverinfo='text',
+#     customdata=node_customdata
+# )
+# fig.add_trace(node_trace)
+
+# # Update the layout
+# fig.update_layout(
+#     title='Trade Network',
+#     scene=dict(
+#         xaxis=dict(title='Node Index', showticklabels=False),
+#         yaxis=dict(title='', showticklabels=False),
+#         zaxis=dict(title='Layer', tickvals=[0, 1, 2], ticktext=['Importer', '2nd Partner', 'Exporter'], showticklabels=True),
+#         camera=dict(eye=dict(x=1.5, y=1.5, z=0.8))
+#     ),
+#     width=1280,
+#     height=800
+# )
+
+# # Create the app layout
+# app.layout = html.Div([
+#     dcc.Graph(id='trade-network', figure=fig),
+#     html.Div(id='click-data')
+# ])
 
 # Callback to handle node click event
 @app.callback(
