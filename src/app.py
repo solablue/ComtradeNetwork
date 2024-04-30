@@ -83,7 +83,7 @@ server = app.server  # Expose the Flask server for deployment with Gunicorn
 
 # Read the CSV file
 # df = pd.read_csv('/Users/solakim/Downloads/df_renamed.csv')
-df = pd.read_csv('src/data/df_network_norway.csv')
+df = pd.read_csv('data/df_network_norway.csv')
 
 # Use a Plotly Express qualitative color palette
 colors = px.colors.qualitative.Plotly
